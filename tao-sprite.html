@@ -94,7 +94,13 @@ pre{margin:0;white-space:pre-wrap;word-break:break-all;font:12px/1.5 ui-monospac
   </div>
   <div class="pn">
     <h2>2. Thông số (như hero-data.js)</h2>
-    <label>Tên / slug <input id="slug" type="text" value="phap-su-tim"></label>
+    <label>Loại ảnh <select id="kind"><option value="idle">Đứng yên (idle)</option><option value="cast">Tung chiêu / tuyệt kỹ (cast · file -ult)</option><option value="fx">Hiệu ứng / vật thể khác (sword, leaf, run…)</option><option value="img">Ảnh chân dung (img)</option><option value="body">Ảnh thân (body)</option></select></label>
+    <label>Tên / slug tướng <input id="slug" type="text" value="phap-su-tim"></label>
+    <label>Tên file gốc (trống = slug) <input id="base" type="text" placeholder="vd: thanh-y-tien-tu"></label>
+    <label>Mã sprite (vd: thy) <input id="skey" type="text" placeholder="trống = chữ đầu"></label>
+    <label>Tên hiệu ứng (đuôi file) <input id="fxn" type="text" value="sword"></label>
+    <label>drop – lệch xuống (tuỳ chọn) <input id="drop" type="number" step="0.01" placeholder="trống = bỏ"></label>
+    <label>?v= chống cache (tuỳ chọn) <input id="ver" type="number" min="1" placeholder="trống = bỏ"></label>
     <label>cw – rộng 1 khung <input id="cw" type="number" min="1"></label>
     <label>ch – cao 1 khung <input id="ch" type="number" min="1"></label>
     <label>Tự lấy cw, ch theo ảnh lớn nhất <input id="auto" type="checkbox" checked></label>
@@ -151,7 +157,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-all;font:12px/1.5 ui-monospac
   </div>
   <div class="pn">
     <h2>3. Xuất file</h2>
-    <label>Định dạng <select id="fmt"><option value="png">PNG (nét, nặng)</option><option value="webp">WebP (nhẹ)</option></select></label>
+    <label>Định dạng <select id="fmt"><option value="webp">WebP (nhẹ, như hero-data)</option><option value="png">PNG (nét, nặng)</option></select></label>
     <div class="row" style="margin-top:8px"><button id="dl" class="pri" type="button">⬇ Tải sprite sheet</button></div>
     <div id="size" class="ok"></div>
   </div>
@@ -224,6 +230,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-all;font:12px/1.5 ui-monospac
   <div class="pn">
     <h2>Dòng khai báo để chép vào hero-data.js</h2>
     <pre id="out"></pre>
+    <div id="outnote" class="hint"></div>
     <div class="row" style="margin-top:8px"><button id="copy" type="button">📋 Chép</button></div>
   </div>
 </section>
@@ -309,7 +316,7 @@ function rebuild(){
 function draw(){
   const n=frames.length;
   if(!n){sheetUrl='';sheetBlob=null;$('sheet').innerHTML='<div class="empty" style="line-height:1.5">Chưa có khung nào — hãy thả ảnh vào ô bên trái.</div>';
-    $('out').textContent='';$('size').textContent='';$('warn').innerHTML='';$('msg').innerHTML='';
+    $('out').textContent='';$('outnote').textContent='';$('size').textContent='';$('warn').innerHTML='';$('msg').innerHTML='';
     $('ours').innerHTML=$('foes').innerHTML=$('zoom').innerHTML='';$('fn').textContent=0;$('slider').max=0;return}
   const cw=num('cw'),ch=num('ch'),fit=$('fit').value;
   const c=document.createElement('canvas');c.width=cw*n;c.height=ch;
@@ -335,8 +342,7 @@ function draw(){
     paint();
   },'image/'+fmt,0.92);
   $('slider').max=n-1;$('fn').textContent=n-1;
-  const slug=$('slug').value.trim()||'tuong',ext=fmt;
-  $('out').textContent=`{ name: '${slug}', file: 'heros/${slug}/${slug}-idle.${ext}', cw: ${cw}, ch: ${ch}, n: ${n}, h: ${num('h')}, ms: ${num('ms')}, face: '${$('face').value}', mode: '${$('mode').value}' }`;
+  updOut();
 }
 
 /* ---------- hiển thị ---------- */
@@ -402,7 +408,7 @@ $('mode').addEventListener('change',()=>{setPause(false);t0=performance.now()});
 $('dl').onclick=()=>{
   if(!sheetBlob)return alert('Chưa có khung nào để xuất.');
   const slug=$('slug').value.trim()||'tuong',a=document.createElement('a');
-  a.href=sheetUrl;a.download=`${slug}-idle.${$('fmt').value}`;document.body.appendChild(a);a.click();a.remove();
+  a.href=sheetUrl;a.download=outInfo().file;document.body.appendChild(a);a.click();a.remove();
 };
 $('copy').onclick=()=>{navigator.clipboard.writeText($('out').textContent).then(()=>{$('copy').textContent='✓ Đã chép';setTimeout(()=>$('copy').textContent='📋 Chép',1200)})};
 
@@ -789,6 +795,47 @@ document.addEventListener('keydown',e=>{
   else if(k.startsWith('Arrow')&&cm.have){e.preventDefault();
     if(k==='ArrowLeft')cm.pos.x-=st;else if(k==='ArrowRight')cm.pos.x+=st;else if(k==='ArrowUp')cm.pos.y-=st;else cm.pos.y+=st;cmDraw()}
 });
+
+/* ---------- loại ảnh + dòng khai báo đúng định dạng hero-data.js ---------- */
+const camel=t=>t.split(/[^a-z0-9]+/i).filter(Boolean).map(w=>w[0].toUpperCase()+w.slice(1)).join('');
+function outInfo(){
+  const slug=$('slug').value.trim()||'tuong',base=$('base').value.trim()||slug,k=$('kind').value,ext=$('fmt').value;
+  const fx=$('fxn').value.trim()||'fx';
+  const suf=k==='idle'?'idle':k==='cast'?'ult':fx;
+  const file=k==='img'?`${base}.${ext}`:k==='body'?`${base}-body.${ext}`:`${base}-${suf}.${ext}`;
+  const v=parseInt($('ver').value),src=file+(v>0?`?v=${v}`:'');
+  const ini=base.split('-').filter(Boolean).map(w=>w[0]).join('')||'x';
+  const key=($('skey').value.trim()||ini)+(k==='idle'?'Idle':k==='cast'?'Cast':camel(fx));
+  return{slug,base,k,ext,file,src,key};
+}
+function updOut(){
+  const n=frames.length;if(!n){$('out').textContent='';$('outnote').textContent='';return}
+  const o=outInfo(),cw=num('cw'),ch=num('ch'),dr=parseFloat($('drop').value),where=`heros/${o.slug}/${o.file}`;
+  const sp=`"${o.key}":{"src":"${o.src}","cw":${cw},"ch":${ch},"n":${n}${isNaN(dr)?'':`,"drop":${dr}`}}`;
+  let t,note;
+  if(o.k==='idle'){
+    t=sp+`\n"idle":{"sheet":"${o.key}","h":${num('h')},"ms":${num('ms')}}`;
+    note=`Dòng 1: thêm vào trong "sprites":{ … } của tướng (chưa có thì tạo "sprites":{ … }). Dòng 2: khoá "idle" của tướng. Đặt file ảnh ở ${where}`;
+  }else if(o.k==='cast'||o.k==='fx'){
+    t=sp;
+    note=`Thêm vào trong "sprites":{ … } của tướng. Khoá "${o.key}" là tên game.js dùng để gọi ${o.k==='cast'?'khung tung chiêu':'hiệu ứng này'}, nên nhớ dùng đúng tên. Đặt file ảnh ở ${where}`;
+  }else if(o.k==='img'){
+    t=`"img":"${o.src}"`;note=`Thay giá trị "img" của tướng. Ảnh tĩnh chỉ nên có 1 khung${n>1?` (hiện có ${n}, chỉ cần để 1)`:''}. Đặt file ảnh ở ${where}`;
+  }else{
+    t=`"body":"${o.src}","bodyH":${num('h')}`;note=`Thay "body" và "bodyH" của tướng (bodyH lấy từ ô h). Ảnh tĩnh chỉ nên có 1 khung${n>1?` (hiện có ${n}, chỉ cần để 1)`:''}. Đặt file ảnh ở ${where}`;
+  }
+  $('out').textContent=t;$('outnote').textContent=note;
+}
+function syncKind(){
+  const k=$('kind').value,spr=k==='idle'||k==='cast'||k==='fx';
+  $('skey').parentElement.hidden=!spr;$('fxn').parentElement.hidden=k!=='fx';$('drop').parentElement.hidden=!spr;
+  $('h').parentElement.hidden=!(k==='idle'||k==='body');$('ms').parentElement.hidden=k!=='idle';
+}
+['slug','base','skey','fxn','drop','ver'].forEach(id=>$(id).addEventListener('input',updOut));
+$('kind').addEventListener('change',()=>{
+  $('mode').value=$('kind').value==='idle'?'loop':'once';syncKind();updOut();setPause(false);t0=performance.now();
+});
+syncKind();
 rebuild();
 </script>
 </body>
